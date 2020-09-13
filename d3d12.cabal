@@ -1,0 +1,104 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.33.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 5b0e0262a866ee51458754a8b52ed2541c4237c97c2c32a7bdec46e0ce56b74e
+
+name:           d3d12
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/githubuser/d3d12#readme>
+homepage:       https://github.com/githubuser/d3d12#readme
+bug-reports:    https://github.com/githubuser/d3d12/issues
+author:         Author name here
+maintainer:     example@example.com
+copyright:      2020 Author name here
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/d3d12
+
+library
+  exposed-modules:
+      Lib
+      Windows
+      Windows.Com.IUnknown
+      Windows.ComBase
+      Windows.Const.Dxgi
+      Windows.Const.HResult
+      Windows.Const.WindowMessage
+      Windows.Direct3D12.CommandAllocator
+      Windows.Direct3D12.CommandQueue
+      Windows.Direct3D12.Debug
+      Windows.Direct3D12.DescriptorHeap
+      Windows.Direct3D12.Device
+      Windows.Direct3D12.Fence
+      Windows.Direct3D12.GraphicsCommandList
+      Windows.Direct3D12.Resource
+      Windows.DirectComposition.DesktopDevice
+      Windows.DirectComposition.Device3
+      Windows.DirectComposition.Target
+      Windows.DirectComposition.Visual2
+      Windows.Dxgi.Adapter
+      Windows.Dxgi.Factory2
+      Windows.Dxgi.SwapChain3
+      Windows.Flags.ExWindowStyle
+      Windows.Flags.WindowStyle
+      Windows.LibLoader
+      Windows.Native
+      Windows.Struct.Direct3D12
+      Windows.Struct.Dxgi
+      Windows.Struct.GUID
+      Windows.Struct.Msg
+      Windows.Struct.Point
+      Windows.Struct.Rect
+      Windows.Struct.WndClassEx
+      Windows.Types
+  other-modules:
+      Paths_d3d12
+  hs-source-dirs:
+      src
+  build-depends:
+      array >=0.5
+    , base >=4.7 && <5
+    , memory
+    , mtl
+  default-language: Haskell2010
+
+executable d3d12-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_d3d12
+  hs-source-dirs:
+      app
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      array >=0.5
+    , base >=4.7 && <5
+    , d3d12
+    , memory
+    , mtl
+  default-language: Haskell2010
+
+test-suite d3d12-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_d3d12
+  hs-source-dirs:
+      test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      array >=0.5
+    , base >=4.7 && <5
+    , d3d12
+    , memory
+    , mtl
+  default-language: Haskell2010
