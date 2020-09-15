@@ -1,8 +1,9 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Windows.Direct3D12.GraphicsCommandList
-  ( ID3D12GraphicsCommandList, close, resourceBarrier, setViewports, setScissorRects, setRenderTargets, clearRenderTargetView, clearEntireRenderTargetView
-  , ResourceBarrier(..), ResourceStates, resourceStateRenderTarget, resourceStatePresent
+  ( ID3D12GraphicsCommandList, close, copyBufferRegion, setGraphicsRootSignature, setPrimitiveTopology, drawInstanced, setVertexBuffers
+  , resourceBarrier, setViewports, setScissorRects, setRenderTargets, clearRenderTargetView, clearEntireRenderTargetView
+  , ResourceBarrier(..)
   ) where
 
 import Windows.Types (HRESULT, BOOL)
@@ -17,8 +18,11 @@ import Foreign.Marshal.Array (withArray)
 import Data.Ix (Ix)
 import Data.Array.Base (getNumElements)
 import Data.Array.Storable (StorableArray, withStorableArray)
-import Windows.Direct3D12.Resource (ID3D12Resource)
-import Windows.Struct.Direct3D12 (Viewport, CPUDescriptorHandle(..))
+import Data.Word (Word64)
+import Windows.Direct3D12.Resource (ID3D12Resource, ResourceStates)
+import Windows.Direct3D12.RootSignature (ID3D12RootSignature)
+import Windows.Const.Direct3D12 (PrimitiveTopology)
+import Windows.Struct.Direct3D12 (Viewport, CPUDescriptorHandle(..), VertexBufferView)
 import Windows.Struct.Rect (Rect)
 
 data ID3D12GraphicsCommandListVtbl
@@ -32,10 +36,6 @@ instance ComInterface ID3D12GraphicsCommandList where
   type VTable ID3D12GraphicsCommandList = ID3D12GraphicsCommandListVtbl
   guid _ = GUID 0x5b160d0f 0xac1b 0x4185 0x8ba8b3ae42a5a455
 
-type ResourceStates = CUInt
-resourceStateRenderTarget, resourceStatePresent :: ResourceStates
-resourceStateRenderTarget = 0x04
-resourceStatePresent = 0
 type ResourceBarrierFlags = CUInt
 data ResourceBarrier =
   ResourceTransitionBarrier ResourceBarrierFlags (Ptr ID3D12Resource) CUInt ResourceStates ResourceStates |
@@ -74,6 +74,27 @@ close this =
     ret x = if HR.isSucceeded x then Right () else Left x
   in getFunctionPtr _VTBL_INDEX_CLOSE this >>= fmap ret . flip dcall_this this
 
+_VTBL_INDEX_DRAW_INSTANCED = 12
+type PFN_DrawInstanced = Ptr ID3D12GraphicsCommandList -> CUInt -> CUInt -> CUInt -> CUInt -> IO ()
+foreign import ccall "dynamic" dcall_drawInstanced :: FunPtr PFN_DrawInstanced -> PFN_DrawInstanced
+drawInstanced :: Ptr ID3D12GraphicsCommandList -> Int -> Int -> Int -> Int -> IO ()
+drawInstanced this vertexCount instanceCount startVertex startInstance = do
+  fn <- dcall_drawInstanced <$> getFunctionPtr _VTBL_INDEX_DRAW_INSTANCED this
+  fn this (fromIntegral vertexCount) (fromIntegral instanceCount) (fromIntegral startVertex) (fromIntegral startInstance)
+
+_VTBL_COPY_BUFFER_REGION = 15
+type PFN_CopyBufferRegion = Ptr ID3D12GraphicsCommandList -> Ptr ID3D12Resource -> Word64 -> Ptr ID3D12Resource -> Word64 -> Word64 -> IO ()
+foreign import ccall "dynamic" dcall_copyBufferRegion :: FunPtr PFN_CopyBufferRegion -> PFN_CopyBufferRegion
+copyBufferRegion :: Ptr ID3D12GraphicsCommandList -> Ptr ID3D12Resource -> Word64 -> Ptr ID3D12Resource -> Word64 -> Word64 -> IO ()
+copyBufferRegion this dstBuffer dstOffset srcBuffer srcOffset numBytes =
+  getFunctionPtr _VTBL_COPY_BUFFER_REGION this >>= \f -> dcall_copyBufferRegion f this dstBuffer dstOffset srcBuffer srcOffset numBytes
+
+_VTBL_INDEX_SET_PRIMITIVE_TOPOLOGY = 20
+type PFN_IASetPrimitiveTopology = Ptr ID3D12GraphicsCommandList -> PrimitiveTopology -> IO ()
+foreign import ccall "dynamic" dcall_setPrimitiveTopology :: FunPtr PFN_IASetPrimitiveTopology -> PFN_IASetPrimitiveTopology
+setPrimitiveTopology :: Ptr ID3D12GraphicsCommandList -> PrimitiveTopology -> IO ()
+setPrimitiveTopology this pt = getFunctionPtr _VTBL_INDEX_SET_PRIMITIVE_TOPOLOGY this >>= \f -> dcall_setPrimitiveTopology f this pt
+
 type PFN_MultipleSetter s = Ptr ID3D12GraphicsCommandList -> CUInt -> Ptr s -> IO ()
 foreign import ccall "dynamic" dcall_multipleSetter :: FunPtr (PFN_MultipleSetter s) -> (PFN_MultipleSetter s)
 _VTBL_INDEX_RS_SET_VIEWPORTS = 21
@@ -97,6 +118,21 @@ resourceBarrier this barriers = withStorableArray barriers $ \barriersRef -> do
   fn <- dcall_resourceBarrier <$> getFunctionPtr _VTBL_INDEX_RESOURCE_BARRIER this
   barrierCount <- fromIntegral <$> getNumElements barriers
   fn this barrierCount barriersRef
+
+_VTBL_INDEX_SET_GRAPHICS_ROOT_SIGNATURE = 30
+type PFN_SetGraphicsRootSignature = Ptr ID3D12GraphicsCommandList -> Ptr ID3D12RootSignature -> IO ()
+foreign import ccall "dynamic" dcall_setGraphicsRootSignature :: FunPtr PFN_SetGraphicsRootSignature -> PFN_SetGraphicsRootSignature
+setGraphicsRootSignature :: Ptr ID3D12GraphicsCommandList -> Ptr ID3D12RootSignature -> IO ()
+setGraphicsRootSignature this rs = getFunctionPtr _VTBL_INDEX_SET_GRAPHICS_ROOT_SIGNATURE this >>= \f -> dcall_setGraphicsRootSignature f this rs
+
+_VTBL_INDEX_SET_VERTEX_BUFFERS = 44
+type PFN_IASetVertexBuffers = Ptr ID3D12GraphicsCommandList -> CUInt -> CUInt -> Ptr VertexBufferView -> IO ()
+foreign import ccall "dynamic" dcall_setVertexBuffers :: FunPtr PFN_IASetVertexBuffers -> PFN_IASetVertexBuffers
+setVertexBuffers :: Ix i => Ptr ID3D12GraphicsCommandList -> Int -> StorableArray i VertexBufferView -> IO ()
+setVertexBuffers this startSlot views = withStorableArray views $ \viewRef -> do
+  fn <- dcall_setVertexBuffers <$> getFunctionPtr _VTBL_INDEX_SET_VERTEX_BUFFERS this
+  viewCount <- fromIntegral <$> getNumElements views
+  fn this (fromIntegral startSlot) viewCount viewRef
 
 _VTBL_INDEX_SET_RENDER_TARGETS = 46
 type PFN_OMSetRenderTargets = Ptr ID3D12GraphicsCommandList -> CUInt -> Ptr CPUDescriptorHandle -> BOOL -> Ptr CPUDescriptorHandle -> IO ()

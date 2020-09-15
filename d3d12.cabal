@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 5b0e0262a866ee51458754a8b52ed2541c4237c97c2c32a7bdec46e0ce56b74e
+-- hash: e33b816972baf3ca68d1b94d7cdd1dc8370ea270c543c2682b9bdfd41e49e8c6
 
 name:           d3d12
 version:        0.1.0.0
@@ -31,9 +31,11 @@ library
       Windows
       Windows.Com.IUnknown
       Windows.ComBase
+      Windows.Const.Direct3D12
       Windows.Const.Dxgi
       Windows.Const.HResult
       Windows.Const.WindowMessage
+      Windows.D3DBlob
       Windows.Direct3D12.CommandAllocator
       Windows.Direct3D12.CommandQueue
       Windows.Direct3D12.Debug
@@ -41,7 +43,10 @@ library
       Windows.Direct3D12.Device
       Windows.Direct3D12.Fence
       Windows.Direct3D12.GraphicsCommandList
+      Windows.Direct3D12.Heap
+      Windows.Direct3D12.PipelineState
       Windows.Direct3D12.Resource
+      Windows.Direct3D12.RootSignature
       Windows.DirectComposition.DesktopDevice
       Windows.DirectComposition.Device3
       Windows.DirectComposition.Target
@@ -66,8 +71,9 @@ library
   hs-source-dirs:
       src
   build-depends:
-      array >=0.5
+      array
     , base >=4.7 && <5
+    , bytestring
     , memory
     , mtl
   default-language: Haskell2010
@@ -80,8 +86,9 @@ executable d3d12-exe
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      array >=0.5
+      array
     , base >=4.7 && <5
+    , bytestring
     , d3d12
     , memory
     , mtl
@@ -96,8 +103,9 @@ test-suite d3d12-test
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      array >=0.5
+      array
     , base >=4.7 && <5
+    , bytestring
     , d3d12
     , memory
     , mtl

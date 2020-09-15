@@ -3,8 +3,11 @@ module Windows.Const.Dxgi where
 import Foreign.C.Types (CUInt)
 
 type Format = CUInt
-formatR8G8B8A8Unorm :: Format
+formatR8G8B8A8Unorm, formatUnknown, formatR32G32Float, formatR32G32B32A32Float :: Format
 formatR8G8B8A8Unorm = 28
+formatUnknown = 0
+formatR32G32Float = 16
+formatR32G32B32A32Float = 2
 
 type Usage = CUInt
 usageRenderTargetOutput :: Usage

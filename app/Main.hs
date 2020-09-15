@@ -22,8 +22,15 @@ import qualified Windows.Direct3D12.CommandQueue as ID3D12CommandQueue
 import qualified Windows.Direct3D12.DescriptorHeap as ID3D12DescriptorHeap
 import qualified Windows.Direct3D12.GraphicsCommandList as ID3D12GraphicsCommandList
 import qualified Windows.Direct3D12.Fence as ID3D12Fence
-import Windows.Direct3D12.GraphicsCommandList (ResourceBarrier(ResourceTransitionBarrier), resourceStatePresent, resourceStateRenderTarget)
-import Windows.Struct.Direct3D12 (plusCPUDescriptorHandle, Viewport(..))
+import qualified Windows.Direct3D12.Heap as ID3D12Heap
+import qualified Windows.Direct3D12.Resource as ID3D12Resource
+import qualified Windows.Direct3D12.RootSignature as ID3D12RootSignature
+import qualified Windows.Direct3D12.PipelineState as ID3D12PipelineState
+import qualified Windows.D3DBlob as ID3DBlob
+import Windows.Direct3D12.GraphicsCommandList (ResourceBarrier(ResourceTransitionBarrier))
+import Windows.Direct3D12.Resource (resourceStatePresent, resourceStateRenderTarget)
+import Windows.Const.Direct3D12 (primitiveTopologyTriangleList)
+import Windows.Struct.Direct3D12 (plusCPUDescriptorHandle, Viewport(..), Range(..), VertexBufferView(..))
 import Windows.Struct.Rect (Rect(..))
 import qualified Windows.DirectComposition.DesktopDevice as IDCompositionDesktopDevice
 import qualified Windows.DirectComposition.Device3 as IDCompositionDevice3
@@ -37,12 +44,15 @@ import Control.Exception (Exception, throwIO)
 import Control.Monad.Cont (ContT(..), runContT)
 import Control.Monad.Trans (lift)
 import Foreign.C.String (withCString)
-import Foreign.C.Types (CUInt, CULong)
+import Foreign.C.Types (CUInt, CULong, CFloat)
 import Foreign.Marshal.Alloc (alloca)
-import Foreign.Ptr (Ptr, nullPtr)
+import Foreign.Marshal.Array (withArray)
+import Foreign.Ptr (Ptr, nullPtr, castPtr, plusPtr)
+import Foreign.Storable (Storable(..))
 import Data.Bits ((.|.))
 import Data.Maybe (maybe)
 import Data.IORef (newIORef, modifyIORef, readIORef)
+import qualified Data.ByteString as B
 import Numeric (showHex)
 
 data PlatformException = RegisterClassExFailed | WindowCreationFailed | ComError HRESULT | EventCreationFailed
@@ -59,6 +69,25 @@ ensureSuccessComIO = either (throwIO . ComError) pure
 -- | using interface while continuation chain. auto released after chain was finished
 useInterface :: ComInterface a => Ptr a -> ContT r IO (Ptr a)
 useInterface = ContT . withInterface
+
+data ColorVertex = ColorVertex CFloat CFloat CFloat CFloat CFloat CFloat
+instance Storable ColorVertex where
+  sizeOf _ = 4 * 6
+  alignment _ = 4
+  peek p = ColorVertex <$>
+    peek (castPtr p) <*>
+    peek (plusPtr p 4) <*>
+    peek (plusPtr p 8) <*>
+    peek (plusPtr p 12) <*>
+    peek (plusPtr p 16) <*>
+    peek (plusPtr p 20)
+  poke p (ColorVertex x y r g b a) = do
+    poke (castPtr p   ) x
+    poke (plusPtr p  4) y
+    poke (plusPtr p  8) r
+    poke (plusPtr p 12) g
+    poke (plusPtr p 16) b
+    poke (plusPtr p 20) a
 
 main :: IO ()
 main = do
@@ -92,6 +121,80 @@ main = do
       bb <- useInterface =<< (lift $ IDXGISwapChain3.getBuffer swapchain bbx >>= ensureSuccessComIO)
       let destHandle = plusCPUDescriptorHandle rtvDescBase $ bbx * fromIntegral rtvDescSize
       lift $ ID3D12Device.createRenderTargetView device12 bb destHandle
+    
+    let heapDesc = ID3D12Heap.HeapDesc (fromIntegral $ sizeOf (undefined :: ColorVertex) * 3) ID3D12Heap.heapDefaultProperties 0 ID3D12Heap.heapFlagAllowOnlyBuffers 
+    heap <- useInterface =<< lift (ID3D12Device.createHeap device12 heapDesc >>= ensureSuccessComIO)
+    let rdBuffer = ID3D12Resource.ResourceDesc
+          ID3D12Resource.resourceDimensionBuffer 0 (fromIntegral $ sizeOf (undefined :: ColorVertex) * 3) 1 1 1 DxgiConst.formatUnknown DxgiStruct.defaultSampleDesc
+          ID3D12Resource.textureLayoutRowMajor 0
+    res <- useInterface =<< lift (ID3D12Device.createPlacedResource device12 heap 0 rdBuffer ID3D12Resource.resourceStateCopyDest Nothing >>= ensureSuccessComIO)
+    let stgSize = sizeOf (undefined :: ColorVertex) * 3
+    let stgHeapDesc = ID3D12Heap.HeapDesc (fromIntegral stgSize) ID3D12Heap.heapUploadProperties 0 ID3D12Heap.heapFlagAllowOnlyBuffers
+    stgHeap <- useInterface =<< lift (ID3D12Device.createHeap device12 stgHeapDesc >>= ensureSuccessComIO)
+    let rdStgBuffer = ID3D12Resource.ResourceDesc
+          ID3D12Resource.resourceDimensionBuffer 0 (fromIntegral stgSize) 1 1 1 DxgiConst.formatUnknown DxgiStruct.defaultSampleDesc
+          ID3D12Resource.textureLayoutRowMajor 0
+    resStg <- useInterface =<< lift (ID3D12Device.createPlacedResource device12 stgHeap 0 rdStgBuffer ID3D12Resource.resourceStateGenericRead Nothing >>= ensureSuccessComIO)
+    ptr <- lift $ ID3D12Resource.map resStg 0 (Range 0 0) >>= ensureSuccessComIO
+    lift $ poke (castPtr ptr) $ ColorVertex 0.0 0.5 1.0 1.0 1.0 1.0
+    lift $ poke (plusPtr ptr $ sizeOf (undefined :: ColorVertex)) $ ColorVertex 0.5 (-0.5) 1.0 0.0 1.0 1.0
+    lift $ poke (plusPtr ptr $ sizeOf (undefined :: ColorVertex) * 2) $ ColorVertex (-0.5) (-0.5) 0.0 1.0 1.0 1.0
+    lift $ ID3D12Resource.unmap resStg 0 $ Range 0 $ fromIntegral stgSize
+    initWait <- useInterface =<< (lift $ ID3D12Device.createFence device12 0 0 >>= ensureSuccessComIO)
+    initWaitEvent <- (ContT . withEvent) =<< (lift $ createEvent Nothing False False "InitWait" >>= maybe (throwIO EventCreationFailed) pure)
+    initCmdAlloc <- useInterface =<< lift (ID3D12Device.createCommandAllocator device12 ID3D12CommandQueue.commandListTypeDirect >>= ensureSuccessComIO)
+    initCmdBuffer <- useInterface =<< lift (ID3D12Device.createCommandList device12 0 ID3D12CommandQueue.commandListTypeDirect initCmdAlloc Nothing >>= ensureSuccessComIO)
+    outBarriers <- lift $ newListArray (0, 0) [ResourceTransitionBarrier 0 res 0 ID3D12Resource.resourceStateCopyDest ID3D12Resource.resourceStateVertexAndConstantBuffer]
+    lift $ ID3D12GraphicsCommandList.copyBufferRegion initCmdBuffer res 0 resStg 0 (fromIntegral $ sizeOf (undefined :: ColorVertex) * 3)
+    lift $ ID3D12GraphicsCommandList.resourceBarrier initCmdBuffer outBarriers
+    lift $ ID3D12GraphicsCommandList.close initCmdBuffer >>= ensureSuccessComIO
+    lists <- lift $ newListArray (0, 0) [initCmdBuffer]
+    lift $ ID3D12CommandQueue.executeCommandLists q lists
+    lift $ ID3D12CommandQueue.signal q initWait 1
+    lift $ ID3D12Fence.setEventOnCompletion initWait 1 $ eventAsHandle initWaitEvent
+    vbufLocation <- lift $ ID3D12Resource.getGPUVirtualAddress res
+    let vbufView = VertexBufferView vbufLocation (fromIntegral $ sizeOf (undefined :: ColorVertex) * 3) (fromIntegral $ sizeOf (undefined :: ColorVertex))
+
+    vshCode <- lift $ B.readFile "shaders/pass_color.vsho"
+    pshCode <- lift $ B.readFile "shaders/fill.psho"
+    vshCodePacked <- ContT $ ID3D12PipelineState.withNewShaderBytecode vshCode
+    pshCodePacked <- ContT $ ID3D12PipelineState.withNewShaderBytecode pshCode
+    let emptyRootSignatureDesc = ID3D12RootSignature.RootSignatureDesc 0 nullPtr 0 nullPtr ID3D12RootSignature.rootSignatureFlagAllowInputAssemblerInputLayout
+    emptyRootSignature <- useInterface =<< lift (ID3D12RootSignature.serializeRootSignature d12 emptyRootSignatureDesc ID3D12RootSignature.rootSignatureVersion1 >>= ensureSuccessComIO >>= flip withInterface (\blob -> do
+      ptr <- ID3DBlob.getBufferPointer blob
+      size <- ID3DBlob.getBufferSize blob
+      ID3D12Device.createRootSignature device12 0 ptr size >>= ensureSuccessComIO))
+    semanticNamePosition <- ContT $ withCString "POSITION"
+    semanticNameColor <- ContT $ withCString "COLOR"
+    inputElements <- ContT $ withArray
+      [ ID3D12PipelineState.InputElementDesc semanticNamePosition 0 DxgiConst.formatR32G32Float 0 0 ID3D12PipelineState.inputClassificationPerVertex 0
+      , ID3D12PipelineState.InputElementDesc semanticNameColor 0 DxgiConst.formatR32G32B32A32Float 0 (4 * 2) ID3D12PipelineState.inputClassificationPerVertex 0
+      ]
+    let pipelineStateDesc = ID3D12PipelineState.GraphicsPipelineStateDesc
+          emptyRootSignature
+          vshCodePacked
+          pshCodePacked
+          ID3D12PipelineState.emptyShaderBytecode
+          ID3D12PipelineState.emptyShaderBytecode
+          ID3D12PipelineState.emptyShaderBytecode
+          ID3D12PipelineState.streamOutputDescDisabled
+          (ID3D12PipelineState.BlendDesc False False [ID3D12PipelineState.renderTargetBlendDescDisabled])
+          -- ここはこれじゃないとBlendタイミングでなにもサンプリングされなくなって黒くなる
+          0xffffffff
+          ID3D12PipelineState.defaultRasterizerState
+          ID3D12PipelineState.depthStencilDescDisabled
+          (ID3D12PipelineState.InputLayoutDesc inputElements 2)
+          ID3D12PipelineState.indexBufferStripCutValueDisabled
+          ID3D12PipelineState.primitiveTopologyTypeTriangle
+          1
+          [DxgiConst.formatR8G8B8A8Unorm]
+          DxgiConst.formatUnknown
+          DxgiStruct.defaultSampleDesc
+          0
+          ID3D12PipelineState.emptyCachedPipelineState
+          0
+    pipeline <- useInterface =<< lift (ID3D12Device.createGraphicsPipelineState device12 pipelineStateDesc >>= ensureSuccessComIO)
+    
     cmdwait <- useInterface =<< (lift $ ID3D12Device.createFence device12 0 0 >>= ensureSuccessComIO)
     cmdwaitEvent <- (ContT . withEvent) =<< (lift $ createEvent Nothing False True "CommandWait" >>= maybe (throwIO EventCreationFailed) pure)
     cmdalloc <- useInterface =<< (lift $ ID3D12Device.createCommandAllocator device12 ID3D12CommandQueue.commandListTypeDirect >>= ensureSuccessComIO)
@@ -99,17 +202,22 @@ main = do
     scissors <- lift $ newListArray (0, 0) [Rect 0 0 640 480]
     renderCommands <- forM [0..1] $ \bbx -> do
       bb <- useInterface =<< (lift $ IDXGISwapChain3.getBuffer swapchain bbx >>= ensureSuccessComIO)
-      cb <- lift (ID3D12Device.createCommandList device12 0 ID3D12CommandQueue.commandListTypeDirect cmdalloc Nothing >>= ensureSuccessComIO)
+      cb <- lift (ID3D12Device.createCommandList device12 0 ID3D12CommandQueue.commandListTypeDirect cmdalloc (Just pipeline) >>= ensureSuccessComIO)
       let rtvMain = plusCPUDescriptorHandle rtvDescBase $ bbx * fromIntegral rtvDescSize
       inBarriers <- lift $ newListArray (0, 0) [ResourceTransitionBarrier 0 bb 0 resourceStatePresent resourceStateRenderTarget]
       outBarriers <- lift $ newListArray (0, 0) [ResourceTransitionBarrier 0 bb 0 resourceStateRenderTarget resourceStatePresent]
       renderTargets <- lift $ newListArray (0, 0) [rtvMain]
+      vbufs <- lift $ newListArray (0, 0) [vbufView]
       lift $ sequence_
         [ ID3D12GraphicsCommandList.resourceBarrier cb inBarriers
         , ID3D12GraphicsCommandList.setRenderTargets cb renderTargets Nothing
         , ID3D12GraphicsCommandList.setViewports cb viewports
         , ID3D12GraphicsCommandList.setScissorRects cb scissors
         , ID3D12GraphicsCommandList.clearEntireRenderTargetView cb rtvMain (0.0, 0.0, 0.0, 1.0)
+        , ID3D12GraphicsCommandList.setGraphicsRootSignature cb emptyRootSignature
+        , ID3D12GraphicsCommandList.setPrimitiveTopology cb primitiveTopologyTriangleList
+        , ID3D12GraphicsCommandList.setVertexBuffers cb 0 vbufs
+        , ID3D12GraphicsCommandList.drawInstanced cb 3 1 0 0
         , ID3D12GraphicsCommandList.resourceBarrier cb outBarriers
         ]
       lift $ ID3D12GraphicsCommandList.close cb >>= ensureSuccessComIO
@@ -123,6 +231,7 @@ main = do
     lift $ IDCompositionTarget.setRoot dcTarget dcVisual >>= ensureSuccessComIO
     lift $ IDCompositionDesktopDevice.commit dcDevice >>= ensureSuccessComIO
     
+    lift $ waitForSingleObject (eventAsHandle initWaitEvent) Nothing
     frameCounter <- lift $ newIORef 0
 
     lift $ showWindow window _SW_SHOWNORMAL

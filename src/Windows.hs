@@ -4,7 +4,7 @@ module Windows
   ( registerClassEx, createWindowEx, getMessage, GetMessageResult(..), translateMessage, dispatchMessage
   , msgWaitForMultipleObjects, WaitResult(..), peekMessage, RemoveType(..), wakeMaskAllEvents, waitFlagInputAvailable
   , showWindow, _SW_SHOWNORMAL, postQuitMessage, defWindowProc
-  , Event, createEvent, destroyEvent, withEvent, eventAsHandle
+  , Event, createEvent, destroyEvent, withEvent, eventAsHandle, waitForSingleObject
   ) where
 
 import Data.Maybe (maybe)
@@ -148,3 +148,7 @@ destroyEvent :: Event -> IO BOOL
 destroyEvent = closeHandle . eventAsHandle
 withEvent :: Event -> (Event -> IO a) -> IO a
 withEvent e = bracket (pure e) destroyEvent
+
+foreign import ccall "WaitForSingleObject" c_WaitForSingleObject :: HANDLE -> DWORD -> IO DWORD
+waitForSingleObject :: HANDLE -> Maybe Int -> IO DWORD
+waitForSingleObject handle timeout = c_WaitForSingleObject handle $ maybe 0xffffffff fromIntegral timeout
