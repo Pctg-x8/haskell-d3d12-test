@@ -205,8 +205,8 @@ main = do
     cmdalloc <- useInterface =<< lift (runComTWithDiverge "ID3D12Device.createCommandAllocator" $ ID3D12Device.createCommandAllocator device12 ID3D12CommandQueue.commandListTypeDirect)
     viewports <- lift $ newListArray (0, 0) [Viewport 0.0 0.0 640.0 480.0 0.0 1.0]
     scissors <- lift $ newListArray (0, 0) [Rect 0 0 640 480]
-    renderCommands <- lift $ forM [0..1] $ \bbx -> do
-      runContT (useInterface =<< lift (runComTWithDiverge "IDXGISwapChain3.getBuffer Rendering" $ IDXGISwapChain3.getBuffer swapchain bbx)) $ \bb ->
+    renderCommands <- forM [0..1] $ \bbx ->
+      useInterface =<< lift (runContT (useInterface =<< lift (runComTWithDiverge "IDXGISwapChain3.getBuffer Rendering" $ IDXGISwapChain3.getBuffer swapchain bbx)) (\bb ->
         runComTWithDiverge "Building RenderCommands" $ do
           cb <- ID3D12Device.createCommandList device12 0 ID3D12CommandQueue.commandListTypeDirect cmdalloc (Just pipeline)
           let rtvMain = plusCPUDescriptorHandle rtvDescBase $ bbx * fromIntegral rtvDescSize
@@ -227,7 +227,7 @@ main = do
             , ID3D12GraphicsCommandList.resourceBarrier cb outBarriers
             ]
           ID3D12GraphicsCommandList.close cb
-          pure cb
+          pure cb))
     
     dclib <- ContT $ withLibrary "dcomp"
     dcDevice <- useInterface =<< lift (runComTWithDiverge "IDCompositionDevice3.createDevice" $ IDCompositionDevice3.createDevice dclib Nothing)
