@@ -33,6 +33,7 @@ import Windows.Com.Monad (ComT, comT, runComT, handleHRESULT)
 import Control.Monad.Cont (ContT(..), runContT)
 import Control.Monad.Trans (lift)
 import Control.Monad.IO.Class (liftIO)
+import Control.Exception (bracket)
 
 data ID3D12ResourceVtbl
 newtype ID3D12Resource = ID3D12Resource (Ptr ID3D12ResourceVtbl) deriving Storable

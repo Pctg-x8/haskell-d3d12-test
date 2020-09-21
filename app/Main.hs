@@ -41,7 +41,7 @@ import Data.Array.MArray (newListArray)
 import Data.Array.Storable (touchStorableArray)
 import Data.Functor (($>))
 import Control.Monad (when, forM, forM_)
-import Control.Exception (Exception, throwIO)
+import Control.Exception (Exception, throwIO, bracket)
 import Control.Monad.Cont (ContT(..), runContT)
 import Control.Monad.Trans (lift)
 import Foreign.C.String (withCString)
@@ -141,10 +141,10 @@ main = do
           ID3D12Resource.textureLayoutRowMajor 0
     resStg <- useInterface =<< lift (runComTWithDiverge "ID3D12Device.createPlacedResource stg" $ ID3D12Device.createPlacedResource device12 stgHeap 0 rdStgBuffer ID3D12Resource.resourceStateGenericRead Nothing)
     ptr <- lift $ runComTWithDiverge "ID3D12Resource.map" $ ID3D12Resource.map resStg 0 (Range 0 0)
-    lift $ poke (castPtr ptr) $ ColorVertex 0.0 0.5 1.0 1.0 1.0 1.0
-    lift $ poke (plusPtr ptr $ sizeOf (undefined :: ColorVertex)) $ ColorVertex 0.5 (-0.5) 1.0 0.0 1.0 1.0
-    lift $ poke (plusPtr ptr $ sizeOf (undefined :: ColorVertex) * 2) $ ColorVertex (-0.5) (-0.5) 0.0 1.0 1.0 1.0
-    lift $ ID3D12Resource.unmap resStg 0 $ Range 0 $ fromIntegral stgSize
+    lift $ bracket (runComTWithDiverge "ID3D12Resource.map" $ ID3D12Resource.map resStg 0 $ Range 0 0) (const $ ID3D12Resource.unmap resStg 0 $ Range 0 $ fromIntegral stgSize) $ \ptr -> do
+      poke (castPtr ptr) $ ColorVertex 0.0 0.5 1.0 1.0 1.0 1.0
+      poke (plusPtr ptr $ sizeOf (undefined :: ColorVertex)) $ ColorVertex 0.5 (-0.5) 1.0 0.0 1.0 1.0
+      poke (plusPtr ptr $ sizeOf (undefined :: ColorVertex) * 2) $ ColorVertex (-0.5) (-0.5) 0.0 1.0 1.0 1.0
     initWait <- useInterface =<< lift (runComTWithDiverge "ID3D12Device.createFence" $ ID3D12Device.createFence device12 0 0)
     initWaitEvent <- (ContT . withEvent) =<< (lift $ createEvent Nothing False False "InitWait" >>= maybe (throwIO EventCreationFailed) pure)
     initCmdAlloc <- useInterface =<< lift (runComTWithDiverge "ID3D12Device.createCommandAllocator" $ ID3D12Device.createCommandAllocator device12 ID3D12CommandQueue.commandListTypeDirect)
