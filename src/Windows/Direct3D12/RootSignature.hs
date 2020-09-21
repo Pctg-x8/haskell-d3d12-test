@@ -21,6 +21,10 @@ import Foreign.Marshal.Alloc (alloca)
 import Windows.LibLoader (Lib, getProcAddress)
 import Windows.Const.Direct3D12 (Filter, TextureAddressMode, ComparisonFunc, StaticBorderColor)
 import Windows.D3DBlob (ID3DBlob)
+import Windows.Com.Monad (ComT, comT, runComT, handleHRESULT)
+import Control.Monad.Cont (ContT(..), runContT)
+import Control.Monad.Trans (lift)
+import Control.Monad.IO.Class (liftIO)
 
 data ID3D12RootSignatureVtbl
 newtype ID3D12RootSignature = ID3D12RootSignature (Ptr ID3D12RootSignatureVtbl) deriving Storable
@@ -169,10 +173,10 @@ rootSignatureVersion1 = 0x01
 
 type PFN_D3D12SerializeRootSignature = Ptr RootSignatureDesc -> RootSignatureVersion -> Ptr (Ptr ID3DBlob) -> Ptr (Ptr ID3DBlob) -> IO HRESULT
 foreign import ccall "dynamic" dcall_serializeRootSignature :: FunPtr PFN_D3D12SerializeRootSignature -> PFN_D3D12SerializeRootSignature
-serializeRootSignature :: Lib -> RootSignatureDesc -> RootSignatureVersion -> IO (Either HRESULT (Ptr ID3DBlob))
-serializeRootSignature lib desc v =
-  alloca $ \blobptr ->
-  Marshal.with desc $ \descRef -> do
-    fn <- dcall_serializeRootSignature <$> getProcAddress "D3D12SerializeRootSignature" lib
-    hr <- fn descRef v blobptr nullPtr
-    if HR.isSucceeded hr then Right <$> peek blobptr else pure $ Left hr
+serializeRootSignature :: Lib -> RootSignatureDesc -> RootSignatureVersion -> ComT IO (Ptr ID3DBlob)
+serializeRootSignature lib desc v = flip runContT pure $ do
+  blobptr <- ContT $ \f -> comT $ alloca $ runComT . f
+  descRef <- ContT $ \f -> comT $ Marshal.with desc $ runComT . f
+  fn <- liftIO $ dcall_serializeRootSignature <$> getProcAddress "D3D12SerializeRootSignature" lib
+  hr <- liftIO $ fn descRef v blobptr nullPtr
+  lift $ handleHRESULT hr >> lift (peek blobptr)

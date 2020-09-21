@@ -25,6 +25,7 @@ dependencies:
 - memory
 - mtl
 - bytestring
+- unliftio-core
 
 library:
   source-dirs: src

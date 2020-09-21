@@ -84,7 +84,7 @@ data HeapDesc = HeapDesc
   , descAlignment :: Word64
   , descFlags :: HeapFlags }
 instance Storable HeapDesc where
-  sizeOf _ = 20 + sizeOf (undefined :: HeapProperties)
+  sizeOf _ = 28 + sizeOf (undefined :: HeapProperties)
   alignment _ = 8
   peek p = HeapDesc <$>
     peek (castPtr p) <*>

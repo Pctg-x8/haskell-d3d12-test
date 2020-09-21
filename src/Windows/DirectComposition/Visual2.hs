@@ -10,6 +10,8 @@ import Windows.Com.IUnknown (IUnknown)
 import Foreign.Storable (Storable(..))
 import Foreign.Ptr (Ptr, castPtr, FunPtr)
 import Foreign.C.Types (CLong(..))
+import Windows.Com.Monad (ComT, handleHRESULT)
+import Control.Monad.IO.Class (liftIO)
 
 data IDCompositionVisual2Vtbl
 newtype IDCompositionVisual2 = IDCompositionVisual2 (Ptr IDCompositionVisual2Vtbl)
@@ -25,7 +27,5 @@ instance ComInterface IDCompositionVisual2 where
 _VTBL_INDEX_SET_CONTENT = 15
 type PFN_SetContent = Ptr IDCompositionVisual2 -> Ptr IUnknown -> IO HRESULT
 foreign import ccall "dynamic" dcall_setContent :: FunPtr PFN_SetContent -> PFN_SetContent
-setContent :: Ptr IDCompositionVisual2 -> Ptr a -> IO (Either HRESULT ())
-setContent this content = do
-  hr <- getFunctionPtr _VTBL_INDEX_SET_CONTENT this >>= \f -> dcall_setContent f this (castPtr content)
-  pure $ if HR.isSucceeded hr then Right () else Left hr
+setContent :: Ptr IDCompositionVisual2 -> Ptr a -> ComT IO ()
+setContent this content = liftIO (getFunctionPtr _VTBL_INDEX_SET_CONTENT this >>= \f -> dcall_setContent f this $ castPtr content) >>= handleHRESULT

@@ -21,7 +21,6 @@ instance Storable IDXGIAdapter where
   peek p = IDXGIAdapter <$> peek (castPtr p)
   poke p (IDXGIAdapter v) = poke (castPtr p) v
 
-
 -- reexports and autocast
 addRef, release :: Ptr IDXGIAdapter -> IO CULong
 queryInterface :: (ComInterface i, Storable i) => Ptr IDXGIAdapter -> IO (Either HRESULT (Ptr i))

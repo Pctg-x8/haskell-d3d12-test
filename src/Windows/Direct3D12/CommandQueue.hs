@@ -18,6 +18,8 @@ import Windows.Direct3D12.GraphicsCommandList (ID3D12GraphicsCommandList)
 import Data.Ix (Ix)
 import Data.Array.Base (getNumElements)
 import Data.Array.Storable (StorableArray, withStorableArray)
+import Windows.Com.Monad (ComT, handleHRESULT)
+import Control.Monad.IO.Class (liftIO)
 
 data ID3D12CommandQueueVtbl
 data ID3D12CommandQueue = ID3D12CommandQueue (Ptr ID3D12CommandQueueVtbl)
@@ -67,5 +69,5 @@ executeCommandLists this lists = withStorableArray lists $ \listref -> do
 _VTBL_INDEX_SIGNAL = 14
 type PFN_Signal = Ptr ID3D12CommandQueue -> Ptr ID3D12Fence -> Word64 -> IO HRESULT
 foreign import ccall "dynamic" dcall_signal :: FunPtr PFN_Signal -> PFN_Signal
-signal :: Ptr ID3D12CommandQueue -> Ptr ID3D12Fence -> Word64 -> IO HRESULT
-signal this fence value = getFunctionPtr _VTBL_INDEX_SIGNAL this >>= \f -> dcall_signal f this fence value
+signal :: Ptr ID3D12CommandQueue -> Ptr ID3D12Fence -> Word64 -> ComT IO ()
+signal this fence value = liftIO (getFunctionPtr _VTBL_INDEX_SIGNAL this >>= \f -> dcall_signal f this fence value) >>= handleHRESULT

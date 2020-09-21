@@ -24,6 +24,8 @@ import Windows.Direct3D12.RootSignature (ID3D12RootSignature)
 import Windows.Const.Direct3D12 (PrimitiveTopology)
 import Windows.Struct.Direct3D12 (Viewport, CPUDescriptorHandle(..), VertexBufferView)
 import Windows.Struct.Rect (Rect)
+import Windows.Com.Monad (ComT, handleHRESULT)
+import Control.Monad.IO.Class (liftIO)
 
 data ID3D12GraphicsCommandListVtbl
 newtype ID3D12GraphicsCommandList = ID3D12GraphicsCommandList (Ptr ID3D12GraphicsCommandListVtbl)
@@ -68,11 +70,8 @@ instance Storable ResourceBarrier where
 _VTBL_INDEX_CLOSE = 9
 type PFN_Close = Ptr ID3D12GraphicsCommandList -> IO HRESULT
 foreign import ccall "dynamic" dcall_this :: FunPtr (Ptr ID3D12GraphicsCommandList -> IO HRESULT) -> Ptr ID3D12GraphicsCommandList -> IO HRESULT
-close :: Ptr ID3D12GraphicsCommandList -> IO (Either HRESULT ())
-close this =
-  let
-    ret x = if HR.isSucceeded x then Right () else Left x
-  in getFunctionPtr _VTBL_INDEX_CLOSE this >>= fmap ret . flip dcall_this this
+close :: Ptr ID3D12GraphicsCommandList -> ComT IO ()
+close this = liftIO (getFunctionPtr _VTBL_INDEX_CLOSE this >>= flip dcall_this this) >>= handleHRESULT
 
 _VTBL_INDEX_DRAW_INSTANCED = 12
 type PFN_DrawInstanced = Ptr ID3D12GraphicsCommandList -> CUInt -> CUInt -> CUInt -> CUInt -> IO ()

@@ -23,11 +23,16 @@ import Foreign.Ptr (Ptr, FunPtr, castPtr, plusPtr)
 import Foreign.Storable (Storable(..))
 import Foreign.C.Types (CUInt(..), CInt, CLong(..))
 import Foreign.Marshal.Alloc (alloca)
+import qualified Foreign.Marshal.Utils as Marshal
 import Data.Word (Word64, Word16)
 import Data.Bits ((.|.))
 import Windows.Const.Dxgi (Format)
 import Windows.Struct.Dxgi (SampleDesc)
 import Windows.Struct.Direct3D12 (Range)
+import Windows.Com.Monad (ComT, comT, runComT, handleHRESULT)
+import Control.Monad.Cont (ContT(..), runContT)
+import Control.Monad.Trans (lift)
+import Control.Monad.IO.Class (liftIO)
 
 data ID3D12ResourceVtbl
 newtype ID3D12Resource = ID3D12Resource (Ptr ID3D12ResourceVtbl) deriving Storable
@@ -38,22 +43,20 @@ instance ComInterface ID3D12Resource where
 _VTBL_INDEX_MAP = 8
 type PFN_Map = Ptr ID3D12Resource -> CUInt -> Ptr Range -> Ptr (Ptr ()) -> IO HRESULT
 foreign import ccall "dynamic" dcall_map :: FunPtr PFN_Map -> PFN_Map
-map :: Ptr ID3D12Resource -> CUInt -> Range -> IO (Either HRESULT (Ptr ()))
-map this subres readRange =
-  alloca $ \ptr ->
-  alloca $ \rangeRef -> do
-    fn <- dcall_map <$> getFunctionPtr _VTBL_INDEX_MAP this
-    poke rangeRef readRange
-    hr <- fn this subres rangeRef ptr
-    if HR.isSucceeded hr then Right <$> peek ptr else pure $ Left hr
+map :: Ptr ID3D12Resource -> CUInt -> Range -> ComT IO (Ptr ())
+map this subres readRange = flip runContT pure $ do
+  ptr <- ContT $ \f -> comT $ alloca $ runComT . f
+  rangeRef <- ContT $ \f -> comT $ Marshal.with readRange $ runComT . f
+  fn <- liftIO $ dcall_map <$> getFunctionPtr _VTBL_INDEX_MAP this
+  hr <- liftIO $ fn this subres rangeRef ptr
+  lift $ handleHRESULT hr >> lift (peek ptr)
 
 _VTBL_INDEX_UNMAP = 9
 type PFN_Unmap = Ptr ID3D12Resource -> CUInt -> Ptr Range -> IO ()
 foreign import ccall "dynamic" dcall_unmap :: FunPtr PFN_Unmap -> PFN_Unmap
 unmap :: Ptr ID3D12Resource -> CUInt -> Range -> IO ()
-unmap this subres writeRange = alloca $ \rangeRef -> do
+unmap this subres writeRange = Marshal.with writeRange $ \rangeRef -> do
   fn <- dcall_unmap <$> getFunctionPtr _VTBL_INDEX_UNMAP this
-  poke rangeRef writeRange
   fn this subres rangeRef
 
 _VTBL_INDEX_GET_GPU_VIRTUAL_ADDRESS = 11

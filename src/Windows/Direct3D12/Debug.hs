@@ -12,6 +12,12 @@ import Windows.Types (HRESULT)
 import qualified Windows.Const.HResult as HR
 import Foreign.C.Types (CLong(..))
 import Foreign.Marshal.Alloc (alloca)
+import qualified Foreign.Marshal.Utils as Marshal
+import Windows.Com.Monad (ComT, comT, runComT, handleHRESULT)
+import Control.Monad.Cont (ContT(..), runContT)
+import Control.Monad.Trans (lift)
+import Control.Monad.IO.Class (liftIO)
+import Control.Exception (bracket)
 
 data ID3D12DebugVtbl
 data ID3D12Debug = ID3D12Debug (Ptr ID3D12DebugVtbl)
@@ -30,16 +36,17 @@ enableDebugLayer this = flip dcall_f1 this =<< getFunctionPtr 3 this
 
 type PFN_D3D12GetDebugInterface = Ptr GUID -> Ptr (Ptr ()) -> IO HRESULT
 foreign import ccall "dynamic" dcall_getdebuginterface :: FunPtr PFN_D3D12GetDebugInterface -> PFN_D3D12GetDebugInterface
-getDebugInterface :: Lib -> IO (Either HRESULT (Ptr ID3D12Debug))
-getDebugInterface lib =
-  alloca $ \ptr ->
-  alloca $ \refiid -> do
-    fn <- dcall_getdebuginterface <$> getProcAddress "D3D12GetDebugInterface" lib
-    poke refiid $ guid (undefined :: Ptr ID3D12Debug)
-    hr <- fn refiid $ castPtr ptr
-    if HR.isSucceeded hr then Right <$> peek ptr else pure $ Left hr
+getDebugInterface :: Lib -> ComT IO (Ptr ID3D12Debug)
+getDebugInterface lib = flip runContT pure $ do
+  ptr <- ContT $ \f -> comT $ alloca $ runComT . f
+  refiid <- ContT $ \f -> comT $ Marshal.with (guid (undefined :: Ptr ID3D12Debug)) $ runComT . f
+  fn <- liftIO $ dcall_getdebuginterface <$> getProcAddress "D3D12GetDebugInterface" lib
+  hr <- liftIO $ fn refiid $ castPtr ptr
+  lift $ handleHRESULT hr >> lift (peek ptr)
 
-withDebugInterface :: Lib -> (Ptr ID3D12Debug -> IO a) -> IO (Either HRESULT a)
-withDebugInterface lib action = getDebugInterface lib >>= \e -> case e of
-  Left e -> pure $ Left e
-  Right p -> fmap Right $ action p
+withDebugInterface :: Lib -> (Ptr ID3D12Debug -> IO a) -> ComT IO a
+withDebugInterface lib action = comT $ do
+  e <- runComT $ getDebugInterface lib
+  case e of
+    Left e -> pure $ Left e
+    Right p -> Right <$> withInterface p action

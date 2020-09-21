@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: e33b816972baf3ca68d1b94d7cdd1dc8370ea270c543c2682b9bdfd41e49e8c6
+-- hash: 0e3b4be3e0dd21adf1981e7a76e347b193e5b9d32c4d7a9ac57873d5f2f98075
 
 name:           d3d12
 version:        0.1.0.0
@@ -30,6 +30,7 @@ library
       Lib
       Windows
       Windows.Com.IUnknown
+      Windows.Com.Monad
       Windows.ComBase
       Windows.Const.Direct3D12
       Windows.Const.Dxgi
@@ -76,6 +77,7 @@ library
     , bytestring
     , memory
     , mtl
+    , unliftio-core
   default-language: Haskell2010
 
 executable d3d12-exe
@@ -92,6 +94,7 @@ executable d3d12-exe
     , d3d12
     , memory
     , mtl
+    , unliftio-core
   default-language: Haskell2010
 
 test-suite d3d12-test
@@ -109,4 +112,5 @@ test-suite d3d12-test
     , d3d12
     , memory
     , mtl
+    , unliftio-core
   default-language: Haskell2010
